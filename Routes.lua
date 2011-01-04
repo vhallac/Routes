@@ -1767,6 +1767,12 @@ function ConfigHandler:DoForeground(info)
 	t.length = length
 	t.metadata = meta
 	Routes:Print(L["Path with %d nodes found with length %.2f yards after %d iterations in %.2f seconds."]:format(#output, length, iter, timetaken))
+	-- Now relax it
+	if ConfigHandler:IsCluster(info) then
+		t.route = Routes.TSP:ShrinkPath(t.route, Routes.mapData:MapAreaId(zone), t.metadata, taboos, db.defaults.cluster_dist)
+		t.length = Routes.TSP:PathLength(t.route, Routes.mapData:MapAreaId(zone))
+		Routes:Print(L["After shrinking, length is %.2f yards."]:format(t.length))
+	end
 
 	-- redraw lines
 	local AutoShow = Routes:GetModule("AutoShow", true)

@@ -1093,3 +1093,105 @@ function TSP:DecrossRoute(nodes)
 end
 
 -- vim: ts=4 noexpandtab
+
+-- Apply a simple heuristic to move nodes around to shorten the path by only
+-- getting close to the nodes required.
+-- Returns:
+--   nodes: the original path that was clipped
+-- TODO: Honor taboos?
+function TSP:ShrinkPath(nodes, zoneID, metadata, taboos, cluster_dist)
+	local zoneW, zoneH = Routes.mapData:MapArea(zoneID)
+	local tooclose = 1e-3
+
+	local function closest_point(px, py, x1, y1, x2, y2)
+		local dx, dy = x2-x1, y2-y1
+		local u = ((px - x1)*dx + (py - y1)*dy)/(dx^2 + dy^2)
+		return x1 + u*dx, y1 + u*dy
+	end
+
+	local function max_relax(px, py, destx, desty, metadata)
+		-- Find the point that is farthest away from destination
+		local maxdistsq = 0
+		local maxi = 0
+		for i, val in ipairs(metadata) do
+			local x1, y1 = floor(val / 10000) / 10000, (val % 10000) / 10000
+			local distsq = ((destx-x1)*zoneW)^2 + ((desty-y1)*zoneH)^2
+			if distsq > maxdistsq then
+				maxdistsq, maxi = distsq, i
+			end
+		end
+
+		if maxdistsq < cluster_dist^2 then
+			-- Lucky. We can bypass the node
+			return destx, desty
+		end
+
+		local x1, y1 = floor(metadata[maxi] / 10000) / 10000, (metadata[maxi] % 10000) / 10000
+
+		-- Find the point between (px, py) and (destx, desty) such that the
+		-- distance to the farthest cluster element is less than cluster_dist
+		local dx, dy = (destx - px)*zoneW, (desty - py)*zoneH
+		local a = (dx^2 + dy^2)
+		local halfb = (dx*(px-x1)*zoneW + dy*(py-y1)*zoneH)
+		local c = ((px-x1)*zoneW)^2 + ((py-y1)*zoneH)^2 - cluster_dist^2
+		local delta = halfb^2 - a*c
+
+		if delta < 0 then
+			DEFAULT_CHAT_FRAME:AddMessage("Delta is negative. Huh?")
+			return px, py
+		end
+		-- Pick the larger root
+		local u = max(-halfb + delta^.5, -halfb - delta^.5)/a
+		if u < 0 or u > 1 then
+			-- Numerical errors make u look like it is <0. Just set it to 0.
+			return px, py
+		end
+
+		return px + u*dx/zoneW, py + u*dy/zoneH
+	end
+
+	local modified
+	local loopcount = 0
+	local i = 1
+	local x1, y1 = floor(nodes[#nodes] / 10000) / 10000, (nodes[#nodes] % 10000) / 10000
+	local px, py = floor(nodes[1] / 10000) / 10000, (nodes[1] % 10000) / 10000
+
+	while not finished do
+		local inext = i + 1
+		if inext > #nodes then
+			inext = 1
+		end
+		local x2, y2 = floor(nodes[inext] / 10000) / 10000, (nodes[inext] % 10000) / 10000
+
+		-- if the nodes are not too close to each other, try to relax the node
+		-- position
+		if ( abs(px-x1)+abs(py-y1) > tooclose and
+			 abs(px-x2)+abs(py-y2) > tooclose and
+			 abs(x2-x1)+abs(y2-y1) > tooclose) then
+			local xmid, ymid = closest_point(px, py, x1, y1, x2, y2)
+			xmid, ymid = max_relax(px, py, xmid, ymid, metadata[i])
+			-- I am too lazy. I will not scale the point only to check if it has moved enough. :)
+			if abs(xmid-px)+abs(ymid-py) > 1e-3 then
+				px, py = xmid, ymid
+				nodes[i] = floor(px * 10000 + 0.5) * 10000 + floor(py * 10000 + 0.5)
+				modified = true
+			end
+		end
+
+		if inext == 1 then
+			loopcount = loopcount + 1
+			-- Don't loop for too long
+			if loopcount > 25 then break end
+			if not modified then break end
+			modified = false
+		else
+			i = inext
+			x1, y1 = px, py
+			px, py = x2, y2
+		end
+
+	end
+
+	DEFAULT_CHAT_FRAME:AddMessage("cluster_dist="..tostring(cluster_dist))
+	return nodes
+end
