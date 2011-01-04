@@ -663,6 +663,8 @@ function TSP:TwoOpt(path, weight, prune, twoPointFiveOpt, nonblocking)
 	return count
 end
 
+local RelaxPoint
+
 -- Helper function for TSP:InsertNode()
 -- Tries to insert node into an existing cluster
 -- Returns true if successful, false otherwise
@@ -754,6 +756,11 @@ function TSP:InsertNode(nodes, metadata, zoneID, nodeID, radius)
 			insertPoint = i + 1
 		end
 	end
+
+	-- Keep track of the location we insert the node, so that we can relax it at
+	-- the end.
+	local insertIdx = nil
+
 	if weight[(numNodes-1)*numNodes-numNodes] + weight[numNodes*numNodes-1] - weight[(numNodes-1)*numNodes-1] < shortestPathLength then
 		-- Do nothing, inserting the node at the last place is the best, already inserted here.
 		if metadata then
@@ -763,12 +770,16 @@ function TSP:InsertNode(nodes, metadata, zoneID, nodeID, radius)
 				try1, try2 = try2, try1 -- try the closer node first
 			end
 			local flag = tryInsert(nodes, metadata, try1, nodeID, radius, zoneW, zoneH)
+			insertIdx = try1
+
 			if not flag then
 				flag = tryInsert(nodes, metadata, try2, nodeID, radius, zoneW, zoneH)
+				insertIdx = try2
 			end
 			if not flag then -- both clusters failed, so insert a new cluster
 				tinsert(nodes, nodeID)
 				tinsert(metadata, {nodeID})
+				insertIdx = #nodes
 			end
 		end
 	else
@@ -780,16 +791,28 @@ function TSP:InsertNode(nodes, metadata, zoneID, nodeID, radius)
 				try1, try2 = try2, try1
 			end
 			local flag = tryInsert(nodes, metadata, try1, nodeID, radius, zoneW, zoneH)
+			insertIdx = try1
+
 			if not flag then
 				flag = tryInsert(nodes, metadata, try2, nodeID, radius, zoneW, zoneH)
+				insertIdx = try2
 			end
+
 			if not flag then
 				tinsert(nodes, insertPoint, nodeID)
 				tinsert(metadata, insertPoint, {nodeID})
+				insertIdx = insertPoint
 			end
+
 		else
 			tinsert(nodes, insertPoint, nodeID)
 		end
+	end
+
+	if metadata and insertIdx then
+		-- Relax the cluster node to get a shorter path.
+		-- Don't care if it was successful.
+		RelaxPoint(nodes, zoneID, insertIdx, metadata, taboos, radius)
 	end
 
 	-- Cleanup our used tables by recycling them
@@ -1106,6 +1129,23 @@ end
 --   nodes: the original path that was clipped
 -- TODO: Honor taboos?
 function TSP:ShrinkPath(nodes, zoneID, metadata, taboos, cluster_dist)
+	local modified = false
+	local loopCount = 0
+	while true do
+		for i=1, #nodes do
+			modified = RelaxPoint(nodes, zoneID, i, metadata, taboos, cluster_dist) or modified
+		end
+		if not modified then break end
+		loopCount = loopCount + 1
+		if loopCount > 5 then break end
+	end
+
+	print(loopCount)
+
+	return nodes
+end
+
+RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 	local zoneW, zoneH = Routes.mapData:MapArea(zoneID)
 	local tooclose = 1e-3
 
@@ -1167,53 +1207,34 @@ function TSP:ShrinkPath(nodes, zoneID, metadata, taboos, cluster_dist)
 		return px + u*dx/zoneW, py + u*dy/zoneH
 	end
 
-	local modified
-	local loopcount = 0
-	local i = 1
+	local prevNodeIdx, nextNodeIdx = nodeIdx-1, nodeIdx+1
+	if prevNodeIdx == 0 then prevNodeIdx = #nodes end
+	if nextNodeIdx > #nodes then nextNodeIdx = 1 end
+
 	-- Pick up points that we will reuse in the main loop below (last node and
 	-- the first node).
-	local x1, y1 = floor(nodes[#nodes] / 10000) / 10000, (nodes[#nodes] % 10000) / 10000
-	local px, py = floor(nodes[1] / 10000) / 10000, (nodes[1] % 10000) / 10000
+	local x1, y1 = floor(nodes[prevNodeIdx] / 10000) / 10000, (nodes[prevNodeIdx] % 10000) / 10000
+	local px, py = floor(nodes[nodeIdx] / 10000) / 10000, (nodes[nodeIdx] % 10000) / 10000
+	local x2, y2 = floor(nodes[nextNodeIdx] / 10000) / 10000, (nodes[nextNodeIdx] % 10000) / 10000
 
-	while not finished do
-		local inext = i + 1
-		if inext > #nodes then
-			inext = 1
+	local modified
+	-- if the nodes are not too close to each other,
+	-- try to relax the node position.
+	-- TODO: If they are really close to each other, they should be merged
+	-- if possible. Skipping them stops the optimization for these points.
+	if ( abs(px-x1)+abs(py-y1) > tooclose and
+		 abs(px-x2)+abs(py-y2) > tooclose and
+		 abs(x2-x1)+abs(y2-y1) > tooclose) then
+		local xmid, ymid = closest_point(px, py, x1, y1, x2, y2)
+		xmid, ymid = max_relax(px, py, xmid, ymid, metadata[nodeIdx])
+		-- Update the point only if it has moved significantly
+		if abs(xmid-px)+abs(ymid-py) > tooclose then
+			nodes[nodeIdx] = floor(xmid * 10000 + 0.5) * 10000 + floor(ymid * 10000 + 0.5)
+			modified = true
 		end
-		local x2, y2 = floor(nodes[inext] / 10000) / 10000, (nodes[inext] % 10000) / 10000
-		-- if the nodes are not too close to each other,
-		-- try to relax the node position.
-		-- TODO: If they are really close to each other, they should be merged
-		-- if possible. Skipping them stops the optimization for these points.
-		if ( abs(px-x1)+abs(py-y1) > tooclose and
-			 abs(px-x2)+abs(py-y2) > tooclose and
-			 abs(x2-x1)+abs(y2-y1) > tooclose) then
-			local xmid, ymid = closest_point(px, py, x1, y1, x2, y2)
-			xmid, ymid = max_relax(px, py, xmid, ymid, metadata[i])
-			-- Update the point only if it has moved significantly
-			if abs(xmid-px)+abs(ymid-py) > 1e-3 then
-				px, py = xmid, ymid
-				nodes[i] = floor(px * 10000 + 0.5) * 10000 + floor(py * 10000 + 0.5)
-				modified = true
-			end
-		end
-
-		if inext == 1 then
-			loopcount = loopcount + 1
-			-- Don't loop for too long
-			if loopcount > 25 then break end
-			if not modified then break end
-			modified = false
-		else
-			i = inext
-			x1, y1 = px, py
-			px, py = x2, y2
-		end
-
 	end
 
-	return nodes
+	return modified
 end
-
 -- vim: ts=4 noexpandtab
 
