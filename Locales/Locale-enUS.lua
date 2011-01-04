@@ -181,6 +181,7 @@ L["Foreground Disclaimer"] = "Generate close to optimal path for the set of node
 L["Background"] = true
 L["Background Disclaimer"] = "This will perform the TSP route generation in the background much more slowly without locking up WoW. Please note that your WoW will still take a noticable performance hit."
 L["Path with %d nodes found with length %.2f yards after %d iterations in %.2f seconds."] = true
+L["After shrinking, length is %.2f yards."] = true
 L["Now running TSP in the background..."] = true
 L["There is already a TSP running in background. Wait for it to complete first."] = true
 L["The following error occured in the background path generation coroutine, please report to Grum or Xinhuan:"] = true

@@ -1092,10 +1092,16 @@ function TSP:DecrossRoute(nodes)
 	return nodes
 end
 
--- vim: ts=4 noexpandtab
-
 -- Apply a simple heuristic to move nodes around to shorten the path by only
--- getting close to the nodes required.
+-- getting close to the nodes required. The algorithm considers each point on
+-- the path, and tries to get it as close to the line connecting the previous
+-- node to the next node witout breaking its cluster distance constraint. The
+-- extreme case of this procedure is moving the node on top of this line, or
+-- skipping the node altogether, when the line passes close to the cluster
+-- members.
+--
+-- The algorithm terminates either when all nodes are checked without moving any
+-- of them, or when all nodes are checked a certain number of times.
 -- Returns:
 --   nodes: the original path that was clipped
 -- TODO: Honor taboos?
@@ -1103,14 +1109,21 @@ function TSP:ShrinkPath(nodes, zoneID, metadata, taboos, cluster_dist)
 	local zoneW, zoneH = Routes.mapData:MapArea(zoneID)
 	local tooclose = 1e-3
 
+	-- Find the closest point on line (x1, y1)-(x2, y2) to the point (px, py).
+	-- Returns:
+	--   x, y: The coordinates of the closest point.
 	local function closest_point(px, py, x1, y1, x2, y2)
 		local dx, dy = x2-x1, y2-y1
 		local u = ((px - x1)*dx + (py - y1)*dy)/(dx^2 + dy^2)
 		return x1 + u*dx, y1 + u*dy
 	end
 
+	-- Move a node point towards the destination without breking the
+	-- cluster_dist constraint.
+	-- Returns:
+	--   x, y: New coordinates for the node.
 	local function max_relax(px, py, destx, desty, metadata)
-		-- Find the point that is farthest away from destination
+		-- Find the cluster node that is farthest away from destination
 		local maxdistsq = 0
 		local maxi = 0
 		for i, val in ipairs(metadata) do
@@ -1122,10 +1135,12 @@ function TSP:ShrinkPath(nodes, zoneID, metadata, taboos, cluster_dist)
 		end
 
 		if maxdistsq < cluster_dist^2 then
-			-- Lucky. We can bypass the node
+			-- Lucky. We can bypass the node, because the destination point
+			-- covers all cluster nodes.
 			return destx, desty
 		end
 
+		-- Pick up the coordinates of the farthest node.
 		local x1, y1 = floor(metadata[maxi] / 10000) / 10000, (metadata[maxi] % 10000) / 10000
 
 		-- Find the point between (px, py) and (destx, desty) such that the
@@ -1136,10 +1151,12 @@ function TSP:ShrinkPath(nodes, zoneID, metadata, taboos, cluster_dist)
 		local c = ((px-x1)*zoneW)^2 + ((py-y1)*zoneH)^2 - cluster_dist^2
 		local delta = halfb^2 - a*c
 
+		-- Better to skip than to blow up the addon. :)
 		if delta < 0 then
 			DEFAULT_CHAT_FRAME:AddMessage("Delta is negative. Huh?")
 			return px, py
 		end
+
 		-- Pick the larger root
 		local u = max(-halfb + delta^.5, -halfb - delta^.5)/a
 		if u < 0 or u > 1 then
@@ -1153,6 +1170,8 @@ function TSP:ShrinkPath(nodes, zoneID, metadata, taboos, cluster_dist)
 	local modified
 	local loopcount = 0
 	local i = 1
+	-- Pick up points that we will reuse in the main loop below (last node and
+	-- the first node).
 	local x1, y1 = floor(nodes[#nodes] / 10000) / 10000, (nodes[#nodes] % 10000) / 10000
 	local px, py = floor(nodes[1] / 10000) / 10000, (nodes[1] % 10000) / 10000
 
@@ -1162,15 +1181,16 @@ function TSP:ShrinkPath(nodes, zoneID, metadata, taboos, cluster_dist)
 			inext = 1
 		end
 		local x2, y2 = floor(nodes[inext] / 10000) / 10000, (nodes[inext] % 10000) / 10000
-
-		-- if the nodes are not too close to each other, try to relax the node
-		-- position
+		-- if the nodes are not too close to each other,
+		-- try to relax the node position.
+		-- TODO: If they are really close to each other, they should be merged
+		-- if possible. Skipping them stops the optimization for these points.
 		if ( abs(px-x1)+abs(py-y1) > tooclose and
 			 abs(px-x2)+abs(py-y2) > tooclose and
 			 abs(x2-x1)+abs(y2-y1) > tooclose) then
 			local xmid, ymid = closest_point(px, py, x1, y1, x2, y2)
 			xmid, ymid = max_relax(px, py, xmid, ymid, metadata[i])
-			-- I am too lazy. I will not scale the point only to check if it has moved enough. :)
+			-- Update the point only if it has moved significantly
 			if abs(xmid-px)+abs(ymid-py) > 1e-3 then
 				px, py = xmid, ymid
 				nodes[i] = floor(px * 10000 + 0.5) * 10000 + floor(py * 10000 + 0.5)
@@ -1192,6 +1212,8 @@ function TSP:ShrinkPath(nodes, zoneID, metadata, taboos, cluster_dist)
 
 	end
 
-	DEFAULT_CHAT_FRAME:AddMessage("cluster_dist="..tostring(cluster_dist))
 	return nodes
 end
+
+-- vim: ts=4 noexpandtab
+
