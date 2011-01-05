@@ -1140,14 +1140,14 @@ function TSP:ShrinkPath(nodes, zoneID, metadata, taboos, cluster_dist)
 		if loopCount > 5 then break end
 	end
 
-	print(loopCount)
-
 	return nodes
 end
 
 RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 	local zoneW, zoneH = Routes.mapData:MapArea(zoneID)
-	local tooclose = 1e-3
+	-- Not sure what to set this to for a proper value. This tries to allow 0.01
+	-- precision in coordinates.
+	local tooclose = min(.005/zoneW, .005/zoneH)
 
 	-- Find the closest point on line (x1, y1)-(x2, y2) to the point (px, py).
 	-- Returns:
@@ -1193,7 +1193,9 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 
 		-- Better to skip than to blow up the addon. :)
 		if delta < 0 then
-			DEFAULT_CHAT_FRAME:AddMessage("Delta is negative. Huh?")
+			DEFAULT_CHAT_FRAME:AddMessage("Delta is negative ("..tostring(delta)..")")
+			-- The point is too far to the line (I cannot see how, but it happens).
+			-- Just return the original coordinates.
 			return px, py
 		end
 
