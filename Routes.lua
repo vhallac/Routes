@@ -37,7 +37,7 @@ Features:
 	- Fubar plugin available to quickly access your routes
 	- Cartographer_Waypoints and TomTom support for quickly following a route
 	- Works with Chinchilla's Expander minimap and SexyMap's HudMap!
-	- Full in-game help file and FAQ, guiding you step by step on what to do! 
+	- Full in-game help file and FAQ, guiding you step by step on what to do!
 
 Download:
 	The latest version of Routes is always available on
@@ -443,7 +443,7 @@ function Routes:DrawMinimapLines(forceUpdate)
 	local scale_y = minimap_h / (radius*2)
 
 	local minimapScale = Minimap:GetScale()
-	
+
 	for route_name, route_data in pairs( db.routes[ self.LZName[zone][1] ] ) do
 		if type(route_data) == "table" and type(route_data.route) == "table" and #route_data.route > 1 then
 			-- store color/width
@@ -1769,7 +1769,7 @@ function ConfigHandler:DoForeground(info)
 	Routes:Print(L["Path with %d nodes found with length %.2f yards after %d iterations in %.2f seconds."]:format(#output, length, iter, timetaken))
 	-- Now relax it
 	if ConfigHandler:IsCluster(info) then
-		t.route = Routes.TSP:ShrinkPath(t.route, Routes.mapData:MapAreaId(zone), t.metadata, taboos, db.defaults.cluster_dist)
+		t.route = Routes.TSP:ShrinkPath(t.route, Routes.mapData:MapAreaId(zone), t.metadata, taboos, t.cluster_dist or db.defaults.cluster_dist)
 		t.length = Routes.TSP:PathLength(t.route, Routes.mapData:MapAreaId(zone))
 		Routes:Print(L["After shrinking, length is %.2f yards."]:format(t.length))
 	end
