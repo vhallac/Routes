@@ -1224,9 +1224,7 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 	-- try to relax the node position.
 	-- TODO: If they are really close to each other, they should be merged
 	-- if possible. Skipping them stops the optimization for these points.
-	if ( abs(px-x1)+abs(py-y1) > tooclose and
-		 abs(px-x2)+abs(py-y2) > tooclose and
-		 abs(x2-x1)+abs(y2-y1) > tooclose) then
+	if abs(x2-x1)+abs(y2-y1) > tooclose then
 		local xmid, ymid = closest_point(px, py, x1, y1, x2, y2)
 		xmid, ymid = max_relax(px, py, xmid, ymid, metadata[nodeIdx])
 		-- Update the point only if it has moved significantly
