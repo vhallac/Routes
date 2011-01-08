@@ -1145,9 +1145,11 @@ end
 
 RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 	local zoneW, zoneH = Routes.mapData:MapArea(zoneID)
-	-- Not sure what to set this to for a proper value. This tries to allow 0.01
-	-- precision in coordinates.
-	local tooclose = min(.005/zoneW, .005/zoneH)
+	local zoneDivW, zoneDivH = 10000/zoneW, 10000/zoneH
+
+	-- This constant is used to determine if two points are close to each other.
+	-- Its unit is yards.
+	local tooclose = .05
 
 	-- Find the closest point on line (x1, y1)-(x2, y2) to the point (px, py).
 	-- Returns:
@@ -1166,11 +1168,13 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 		-- Find the cluster node that is farthest away from destination
 		local maxdistsq = 0
 		local maxi = 0
+		local maxX1, maxY1
 		for i, val in ipairs(metadata) do
-			local x1, y1 = floor(val / 10000) / 10000, (val % 10000) / 10000
-			local distsq = ((destx-x1)*zoneW)^2 + ((desty-y1)*zoneH)^2
+			local x1, y1 = floor(val / 10000) / zoneDivW, (val % 10000) / zoneDivH
+			local distsq = (destx-x1)^2 + (desty-y1)^2
 			if distsq > maxdistsq then
 				maxdistsq, maxi = distsq, i
+				maxX1, maxY1 = x1, y1
 			end
 		end
 
@@ -1181,14 +1185,14 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 		end
 
 		-- Pick up the coordinates of the farthest node.
-		local x1, y1 = floor(metadata[maxi] / 10000) / 10000, (metadata[maxi] % 10000) / 10000
+		local x1, y1 = maxx1, maxy1
 
 		-- Find the point between (px, py) and (destx, desty) such that the
 		-- distance to the farthest cluster element is less than cluster_dist
-		local dx, dy = (destx - px)*zoneW, (desty - py)*zoneH
+		local dx, dy = destx - px, desty - py
 		local a = (dx^2 + dy^2)
-		local halfb = (dx*(px-x1)*zoneW + dy*(py-y1)*zoneH)
-		local c = ((px-x1)*zoneW)^2 + ((py-y1)*zoneH)^2 - cluster_dist^2
+		local halfb = dx*(px-maxX1) + dy*(py-maxY1)
+		local c = (px-maxX1)^2 + (py-maxY1)^2 - cluster_dist^2
 		local delta = halfb^2 - a*c
 
 		-- Better to skip than to blow up the addon. :)
@@ -1201,12 +1205,19 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 
 		-- Pick the larger root
 		local u = max(-halfb + delta^.5, -halfb - delta^.5)/a
-		if u < 0 or u > 1 then
-			-- Numerical errors make u look like it is <0. Just set it to 0.
+
+		-- Make sure we leave the point within bounds (u<0 => original point,
+		-- u>1 => destination point).
+		if u < 0 then
 			return px, py
 		end
 
-		return px + u*dx/zoneW, py + u*dy/zoneH
+		if u > 1 then
+			return destx, desty
+		end
+
+		-- If everything is OK, return the calculated point
+		return px + u*dx, py + u*dy
 	end
 
 	local prevNodeIdx, nextNodeIdx = nodeIdx-1, nodeIdx+1
@@ -1215,9 +1226,9 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 
 	-- Pick up points that we will reuse in the main loop below (last node and
 	-- the first node).
-	local x1, y1 = floor(nodes[prevNodeIdx] / 10000) / 10000, (nodes[prevNodeIdx] % 10000) / 10000
-	local px, py = floor(nodes[nodeIdx] / 10000) / 10000, (nodes[nodeIdx] % 10000) / 10000
-	local x2, y2 = floor(nodes[nextNodeIdx] / 10000) / 10000, (nodes[nextNodeIdx] % 10000) / 10000
+	local x1, y1 = floor(nodes[prevNodeIdx] / 10000) / zoneDivW, (nodes[prevNodeIdx] % 10000) / zoneDivH
+	local px, py = floor(nodes[nodeIdx] / 10000) / zoneDivW, (nodes[nodeIdx] % 10000) / zoneDivH
+	local x2, y2 = floor(nodes[nextNodeIdx] / 10000) / zoneDivW, (nodes[nextNodeIdx] % 10000) / zoneDivH
 
 	local modified
 	-- if the nodes are not too close to each other,
@@ -1229,7 +1240,7 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 		xmid, ymid = max_relax(px, py, xmid, ymid, metadata[nodeIdx])
 		-- Update the point only if it has moved significantly
 		if abs(xmid-px)+abs(ymid-py) > tooclose then
-			nodes[nodeIdx] = floor(xmid * 10000 + 0.5) * 10000 + floor(ymid * 10000 + 0.5)
+			nodes[nodeIdx] = floor(xmid * zoneDivW + 0.5) * 10000 + floor(ymid * zoneDivH + 0.5)
 			modified = true
 		end
 	end
