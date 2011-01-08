@@ -1184,15 +1184,19 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 			return destx, desty
 		end
 
+		-- Remove the node we've used to make sure we don't recurse indefinitely.
+		tremove(metadata, maxi)
+
 		-- Pick up the coordinates of the farthest node.
 		local x1, y1 = maxx1, maxy1
 
 		-- Find the point between (px, py) and (destx, desty) such that the
 		-- distance to the farthest cluster element is less than cluster_dist
+		-- To avoid Floating point errors, I am moving to cluster_dist-1.
 		local dx, dy = destx - px, desty - py
 		local a = (dx^2 + dy^2)
 		local halfb = dx*(px-maxX1) + dy*(py-maxY1)
-		local c = (px-maxX1)^2 + (py-maxY1)^2 - cluster_dist^2
+		local c = (px-maxX1)^2 + (py-maxY1)^2 - (cluster_dist-1)^2
 		local delta = halfb^2 - a*c
 
 		-- Better to skip than to blow up the addon. :)
@@ -1216,8 +1220,9 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 			return destx, desty
 		end
 
-		-- If everything is OK, return the calculated point
-		return px + u*dx, py + u*dy
+		-- If everything is OK, recalculate the relaxation towards our
+		-- calculated point to ensure all nodes are within range.
+		return max_relax(px, py, px + u*dx, py + u*dy, metadata)
 	end
 
 	local prevNodeIdx, nextNodeIdx = nodeIdx-1, nodeIdx+1
@@ -1236,8 +1241,25 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 	-- TODO: If they are really close to each other, they should be merged
 	-- if possible. Skipping them stops the optimization for these points.
 	if abs(x2-x1)+abs(y2-y1) > tooclose then
+
+		-- Make a copy of the metadata. We'll need to delete them
+		metas = newTable()
+		for i, val in pairs(metadata[nodeIdx]) do
+			metas[i] = val
+		end
 		local xmid, ymid = closest_point(px, py, x1, y1, x2, y2)
-		xmid, ymid = max_relax(px, py, xmid, ymid, metadata[nodeIdx])
+		xmid, ymid = max_relax(px, py, xmid, ymid, metas)
+		delTable(metas)
+
+		-- Double check that the final point is still valid.
+		for i, val in pairs(metadata[nodeIdx]) do
+			local x, y = floor(val / 10000) / zoneDivW, (val % 10000) / zoneDivH
+			if (xmid-x)^2 + (ymid-y)^2 > cluster_dist^2 then
+				print("EEERPPP! Moved point breaks cluster")
+				return false
+			end
+		end
+
 		-- Update the point only if it has moved significantly
 		if abs(xmid-px)+abs(ymid-py) > tooclose then
 			nodes[nodeIdx] = floor(xmid * zoneDivW + 0.5) * 10000 + floor(ymid * zoneDivH + 0.5)
