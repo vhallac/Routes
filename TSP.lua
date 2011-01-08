@@ -1188,7 +1188,7 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 		tremove(metadata, maxi)
 
 		-- Pick up the coordinates of the farthest node.
-		local x1, y1 = maxx1, maxy1
+		local x1, y1 = maxX1, maxY1
 
 		-- Find the point between (px, py) and (destx, desty) such that the
 		-- distance to the farthest cluster element is less than cluster_dist
