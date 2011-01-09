@@ -1165,64 +1165,66 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 	-- Returns:
 	--   x, y: New coordinates for the node.
 	local function max_relax(px, py, destx, desty, metadata)
-		-- Find the cluster node that is farthest away from destination
-		local maxdistsq = 0
-		local maxi = 0
-		local maxX1, maxY1
-		for i, val in ipairs(metadata) do
-			local x1, y1 = floor(val / 10000) / zoneDivW, (val % 10000) / zoneDivH
-			local distsq = (destx-x1)^2 + (desty-y1)^2
-			if distsq > maxdistsq then
-				maxdistsq, maxi = distsq, i
-				maxX1, maxY1 = x1, y1
-			end
-		end
-
-		if maxdistsq < cluster_dist^2 then
-			-- Lucky. We can bypass the node, because the destination point
-			-- covers all cluster nodes.
-			return destx, desty
-		end
-
-		-- Remove the node we've used to make sure we don't recurse indefinitely.
-		tremove(metadata, maxi)
-
-		-- Pick up the coordinates of the farthest node.
-		local x1, y1 = maxX1, maxY1
-
 		-- Find the point between (px, py) and (destx, desty) such that the
 		-- distance to the farthest cluster element is less than cluster_dist
-		-- To avoid Floating point errors, I am moving to cluster_dist-1.
 		local dx, dy = destx - px, desty - py
+		local destdist = (dx^2 + dy^2)^.5
+		-- We won't be able to move more than 2*cluster_dist anyway. If the
+		-- destination is too far, find a more reasonable point as the destination.
+		-- This improves the precision of the calculations below.
+		if destdist > 2*cluster_dist then
+			local scaledown=destdist/(2*cluster_dist)
+			dx = dx/scaledown
+			dy = dy/scaledown
+			destx = px + dx
+			desty = py + dy
+		end
+		destdist = (dx^2 + dy^2)^.5
+
 		local a = (dx^2 + dy^2)
-		local halfb = dx*(px-maxX1) + dy*(py-maxY1)
-		local c = (px-maxX1)^2 + (py-maxY1)^2 - (cluster_dist-1)^2
-		local delta = halfb^2 - a*c
 
-		-- Better to skip than to blow up the addon. :)
-		if delta < 0 then
-			DEFAULT_CHAT_FRAME:AddMessage("Delta is negative ("..tostring(delta)..")")
-			-- The point is too far to the line (I cannot see how, but it happens).
-			-- Just return the original coordinates.
-			return px, py
+		-- Arbitrary large number to keep track of minimum value for U. Since u
+		-- is supposed to be between 0 and 1, 10 is more than OK. :)
+		local minU = 10
+
+		-- Find the maximum amount we can move from (px, py) to (destx, desty)
+		-- without breaking the cluster constraints.
+		for i, val in ipairs(metadata) do
+			local x1, y1 = floor(val / 10000) / zoneDivW, (val % 10000) / zoneDivH
+			local halfb = dx*(px-x1) + dy*(py-y1)
+			-- To avoid Floating point errors, I am moving to cluster_dist-1.
+			local c = (px-x1)^2 + (py-y1)^2 - (cluster_dist-1)^2
+			local delta = halfb^2 - a*c
+
+			-- Better to skip than to blow up the addon. :)
+			if delta < 0 then
+				DEFAULT_CHAT_FRAME:AddMessage("Delta is negative ("..tostring(delta)..")")
+				-- The point is too far to the line (I cannot see how, but it
+				-- happens). Just return the original coordinates.
+				return px, py
+			end
+
+			-- Pick the larger root, and keep track of the minimum one
+			minU = min(minU, max(-halfb + delta^.5, -halfb - delta^.5)/a)
+
+			-- Make sure we leave the point within bounds (u<0 => original
+			-- point, u>1 => destination point). If any one point fixes our
+			-- cluster, no need to look any further.
+			if minU < 0 then
+				return px, py
+			end
+
 		end
 
-		-- Pick the larger root
-		local u = max(-halfb + delta^.5, -halfb - delta^.5)/a
-
-		-- Make sure we leave the point within bounds (u<0 => original point,
-		-- u>1 => destination point).
-		if u < 0 then
-			return px, py
-		end
-
-		if u > 1 then
+		-- If the minimum u is >1, then we can move past our destination point.
+		-- But it is not desirable. Just return destination.
+		if minU > 1 then
 			return destx, desty
 		end
 
 		-- If everything is OK, recalculate the relaxation towards our
 		-- calculated point to ensure all nodes are within range.
-		return max_relax(px, py, px + u*dx, py + u*dy, metadata)
+		return px + minU*dx, py + minU*dy
 	end
 
 	local prevNodeIdx, nextNodeIdx = nodeIdx-1, nodeIdx+1
@@ -1242,20 +1244,13 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 	-- if possible. Skipping them stops the optimization for these points.
 	if abs(x2-x1)+abs(y2-y1) > tooclose then
 
-		-- Make a copy of the metadata. We'll need to delete them
-		metas = newTable()
-		for i, val in pairs(metadata[nodeIdx]) do
-			metas[i] = val
-		end
 		local xmid, ymid = closest_point(px, py, x1, y1, x2, y2)
-		xmid, ymid = max_relax(px, py, xmid, ymid, metas)
-		delTable(metas)
+		xmid, ymid = max_relax(px, py, xmid, ymid, metadata[nodeIdx])
 
 		-- Double check that the final point is still valid.
 		for i, val in pairs(metadata[nodeIdx]) do
 			local x, y = floor(val / 10000) / zoneDivW, (val % 10000) / zoneDivH
 			if (xmid-x)^2 + (ymid-y)^2 > cluster_dist^2 then
-				print("EEERPPP! Moved point breaks cluster")
 				return false
 			end
 		end
