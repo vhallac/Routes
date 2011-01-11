@@ -1157,6 +1157,10 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 	local function closest_point(px, py, x1, y1, x2, y2)
 		local dx, dy = x2-x1, y2-y1
 		local u = ((px - x1)*dx + (py - y1)*dy)/(dx^2 + dy^2)
+		-- If we try to get closer to the line, the route will get longer.
+		-- Never get past the beginning or the end node.
+		if u < 0 then u = 0 end
+		if u > 1 then u = 1 end
 		return x1 + u*dx, y1 + u*dy
 	end
 
