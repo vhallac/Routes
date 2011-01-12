@@ -1196,8 +1196,7 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 		for i, val in ipairs(metadata) do
 			local x1, y1 = floor(val / 10000) / zoneDivW, (val % 10000) / zoneDivH
 			local halfb = dx*(px-x1) + dy*(py-y1)
-			-- To avoid Floating point errors, I am moving to cluster_dist-1.
-			local c = (px-x1)^2 + (py-y1)^2 - (cluster_dist-1)^2
+			local c = (px-x1)^2 + (py-y1)^2 - cluster_dist^2
 			local delta = halfb^2 - a*c
 
 			-- Better to skip than to blow up the addon. :)
