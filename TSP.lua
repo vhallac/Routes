@@ -272,7 +272,7 @@ function TSP:SolveTSP(nodes, metadata, taboos, zoneID, parameters, path, nonbloc
 		end
 	end
 	local metadata = metadata2
-	
+
 	-- Setup ACO parameters
 	local startTime		= GetTime()
 	local zoneW, zoneH	= Routes.mapData:MapArea(zoneID)
@@ -379,7 +379,7 @@ function TSP:SolveTSP(nodes, metadata, taboos, zoneID, parameters, path, nonbloc
 	while nochanges < MAXUNCHANGEDINTERATION do
 		nochanges = nochanges + 1
 		count = count + 1
-		
+
 		-- Step 3	- Each ant k starts at a randomly selected node
 		for k = 1, numAnts do
 			local antpath = ants[k]
@@ -468,9 +468,9 @@ function TSP:SolveTSP(nodes, metadata, taboos, zoneID, parameters, path, nonbloc
 				end
 				nochanges = 0 -- There were changes, so reset nochanges counter to 0
 			end
-		
+
 		end
-			
+
 		-- Step 12	- Perform global pheromone trail update on the best known solution
 		local curnode = shortestPath[numNodes]
 		local tempConstant = GLOBALDECAY * QUALITY / shortestPathLength
@@ -481,7 +481,7 @@ function TSP:SolveTSP(nodes, metadata, taboos, zoneID, parameters, path, nonbloc
 			antprob[u] = phero[u] ^ ALPHA / weight[u] ^ BETA -- Update the probability
 			curnode = nextnode
 		end
-		
+
 		-- report how long path this round found (with progress==1)
 		if nonblocking and TSPUpdateFrame.statusFunc then
 			TSPUpdateFrame.statusFunc(count, 1, shortestPathLength)
@@ -509,7 +509,7 @@ function TSP:SolveTSP(nodes, metadata, taboos, zoneID, parameters, path, nonbloc
 				yield()
 			end
 		end
-		
+
 		-- Recompute the path length
 		shortestPathLength = 0
 		local curnode = shortestPath[numNodes]
@@ -669,18 +669,23 @@ local function tryInsert(nodes, metadata, insertPoint, nodeID, radius, zoneW, zo
 	local num = #metadata[insertPoint]
 	local x, y = floor(nodeID / 10000) / 10000, (nodeID % 10000) / 10000
 	-- Calculate the new centroid and coord
-	local sum_x, sum_y = 0, 0
+	local sum_x, sum_y = x, y
 	for i = 1, num do
 		local coord = metadata[insertPoint][i]
 		local x2, y2 = floor(coord / 10000) / 10000, (coord % 10000) / 10000
 		sum_x, sum_y = sum_x + x2, sum_y + y2
 	end
-	sum_x, sum_y = sum_x + x, sum_y + y
 	x2, y2 = sum_x/(num+1), sum_y/(num+1)
 	local coord = floor(x2 * 10000 + 0.5) * 10000 + floor(y2 * 10000 + 0.5)
-	-- Note: x2, y2 is now the new centroid, and not the
+	-- Note: x2, y2 is now the new centroid
 	x2, y2 = floor(coord / 10000) / 10000, (coord % 10000) / 10000 -- to round off the coordinate
 	-- Check that the merged point is valid
+	local t = (((x2 - x)*zoneW)^2 + ((y2 - y)*zoneH)^2)^0.5
+	if t > radius then
+		return false
+	end
+
+	-- Check the rest of the cluster
 	for i = 1, num do
 		local coord = metadata[insertPoint][i]
 		local x, y = floor(coord / 10000) / 10000, (coord % 10000) / 10000
@@ -1045,7 +1050,7 @@ end
 --              table should be indexed numerically from nodes[1] to nodes[n].
 -- Returns nothing
 -- Notes: The original table sent in is modified directly
--- 
+--
 -- This function is contributed by Polarina for quickly solving a TSP in
 -- O(n log n). The method merely calculates a centroid, and compares the angle
 -- of every node with the centroid and sorts it that way, resulting in a tour
@@ -1132,7 +1137,7 @@ function TSP:ShrinkPath(nodes, zoneID, metadata, taboos, cluster_dist)
 		end
 		if not modified then break end
 		loopCount = loopCount + 1
-		if loopCount > 5 then break end
+		if loopCount > 10 then break end
 	end
 
 	return nodes
@@ -1158,29 +1163,18 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 		-- dy to be really small)
 		if u < 0 then u = 0 end
 		if u > 1 then u = 1 end
-		return x1 + u*dx, y1 + u*dy
+		return u
 	end
 
 	-- Move a node point towards the destination without breking the
 	-- cluster_dist constraint.
 	-- Returns:
 	--   x, y: New coordinates for the node.
-	local function max_relax(px, py, destx, desty, metadata)
+	local function max_relax(px, py, destx, desty)
 		-- Find the point between (px, py) and (destx, desty) such that the
 		-- distance to the farthest cluster element is less than cluster_dist
 		local dx, dy = destx - px, desty - py
 		local destdist = (dx^2 + dy^2)^.5
-		-- We won't be able to move more than 2*cluster_dist anyway. If the
-		-- destination is too far, find a more reasonable point as the destination.
-		-- This improves the precision of the calculations below.
-		if destdist > 2*cluster_dist then
-			local scaledown=destdist/(2*cluster_dist)
-			dx = dx/scaledown
-			dy = dy/scaledown
-			destx = px + dx
-			desty = py + dy
-		end
-
 		local a = (dx^2 + dy^2)
 
 		-- Arbitrary large number to keep track of minimum value for U. Since u
@@ -1189,7 +1183,7 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 
 		-- Find the maximum amount we can move from (px, py) to (destx, desty)
 		-- without breaking the cluster constraints.
-		for i, val in ipairs(metadata) do
+		for i, val in ipairs(metadata[nodeIdx]) do
 			local x1, y1 = floor(val / 10000) / zoneDivW, (val % 10000) / zoneDivH
 			local halfb = dx*(px-x1) + dy*(py-y1)
 			local c = (px-x1)^2 + (py-y1)^2 - cluster_dist^2
@@ -1200,17 +1194,17 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 				DEFAULT_CHAT_FRAME:AddMessage("Delta is negative ("..tostring(delta)..")")
 				-- The point is too far to the line (I cannot see how, but it
 				-- happens). Just return the original coordinates.
-				return px, py
+				return 0
 			end
 
 			-- Pick the larger root, and keep track of the minimum one
-			minU = min(minU, max(-halfb + delta^.5, -halfb - delta^.5)/a)
+			minU = min(minU, max((-halfb + delta^.5)/a, (-halfb - delta^.5)/a))
 
 			-- Make sure we leave the point within bounds (u<0 => original
 			-- point, u>1 => destination point). If any one point fixes our
 			-- cluster, no need to look any further.
 			if minU < 0 then
-				return px, py
+				return 0
 			end
 
 		end
@@ -1218,12 +1212,84 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 		-- If the minimum u is >1, then we can move past our destination point.
 		-- But it is not desirable. Just return destination.
 		if minU > 1 then
-			return destx, desty
+			return 1
 		end
 
-		-- If everything is OK, recalculate the relaxation towards our
-		-- calculated point to ensure all nodes are within range.
-		return px + minU*dx, py + minU*dy
+		-- All OK. Return the minimum U.
+		return minU
+	end
+
+	function is_valid_cluster(xmid, ymid)
+		-- Check that the final point is valid
+		for i, val in ipairs(metadata[nodeIdx]) do
+			local x, y = floor(val / 10000) / zoneDivW, (val % 10000) / zoneDivH
+			if (xmid-x)^2 + (ymid-y)^2 > cluster_dist^2 then
+				return false
+			end
+		end
+
+		return true
+	end
+
+	local function quantize(px, py, destx, desty, u)
+		-- We'll test closest 4 points for tester, and reduce u if they all fail
+		-- until all tests pass or until we pick the same four points again.
+		local qx, qy = {}, {}
+		local x_step = 1/zoneDivW
+		local y_step = 1/zoneDivH
+		local delta_u = 0
+		for retries=1,5 do
+			x1, y1 = px+u*(destx-px), py+u*(desty-py)
+			local tx, ty = floor(x1*zoneDivW)/zoneDivW, floor(y1*zoneDivH)/zoneDivH
+			-- Edge case: if we are still in the same quantization region after
+			-- one loop, reduce u a little, and try again.
+			while qx[1] and delta_u > 0 and
+				math.abs(qx[1] - tx) < 1e-4 and
+				math.abs(qy[1] - ty) < 1e-4
+			do
+				u = u - delta_u
+				if u <= 0 then
+					return
+				end
+				x1, y1 = px+u*(destx-px), py+u*(desty-py)
+				tx, ty = floor(x1*zoneDivW)/zoneDivW, floor(y1*zoneDivH)/zoneDivH
+			end
+			qx[1], qy[1] = tx, ty
+
+			qx[2], qy[2] = qx[1]+x_step, qy[1]
+			qx[3], qy[3] = qx[1],        qy[1]+y_step
+			qx[4], qy[4] = qx[1]+x_step, qy[1]+y_step
+			local max_u = 0
+			for i=1,4 do
+				-- Find the closest point on line P+u*(dest-P) for each point
+				-- in terms of u
+				local u_i = closest_point(qx[i], qy[i], px, py, destx, desty)
+				-- If it is less than current u, update our current u, and check
+				-- if it is a good point.
+				if u_i < u then
+					u = u_i
+				end
+
+				if u_i > max_u then
+					max_u = u_i
+				end
+
+				if is_valid_cluster(qx[i], qy[i]) then
+					-- This is a good quantized point. Just return it.
+					return qx[i], qy[i]
+				end
+			end
+
+			delta_u = max_u - u
+
+			-- No good points. Try again with the smallest u (if u is still valid)
+			if u<=0 then
+				break
+			end
+		end
+
+		-- No good solutions.
+		return
 	end
 
 	local prevNodeIdx, nextNodeIdx = nodeIdx-1, nodeIdx+1
@@ -1238,15 +1304,22 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 
 	local modified
 
-	local xmid, ymid = closest_point(px, py, x1, y1, x2, y2)
-	xmid, ymid = max_relax(px, py, xmid, ymid, metadata[nodeIdx])
+	-- try to relax the node position.
+	local u = closest_point(px, py, x1, y1, x2, y2)
+	local xmid, ymid = x1+u*(x2 - x1), y1 + u*(y2 - y1)
+	u = max_relax(px, py, xmid, ymid)
+	local xmid, ymid = quantize(px, py, xmid, ymid, u)
 
-	-- Double check that the final point is still valid.
-	for i, val in pairs(metadata[nodeIdx]) do
-		local x, y = floor(val / 10000) / zoneDivW, (val % 10000) / zoneDivH
-		if (xmid-x)^2 + (ymid-y)^2 > cluster_dist^2 then
+	if xmid and ymid then
+		if not is_valid_cluster(xmid, ymid) then
 			return false
 		end
+
+		-- Update the point
+		local coord = floor(xmid * zoneDivW) * 10000 + floor(ymid * zoneDivH)
+
+		nodes[nodeIdx] = coord
+		modified = true
 	end
 
 	-- Update the point only if it has moved significantly
