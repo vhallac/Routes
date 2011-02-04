@@ -800,28 +800,32 @@ function Routes:DeleteNode(zone, coord, node_name)
 						-- this is a clustered route
 						for i = 1, #route_data.route do
 							local num_data = #route_data.metadata[i]
+							local sum_x, sum_y = 0, 0
 							for j = 1, num_data do
+								local coord2 = route_data.metadata[i][j]
+								local x2, y2 = self:getXY(coord2)
 								if coord == route_data.metadata[i][j] then
-									-- recalcuate centroid
-									local x, y = self:getXY(coord)
-									local cx, cy = self:getXY(route_data.route[i])
-									if num_data > 1 then
-										-- more than 1 node in this cluster
-										cx, cy = (cx * num_data - x) / (num_data-1), (cy * num_data - y) / (num_data-1)
-										tremove(route_data.metadata[i], j)
-										route_data.route[i] = self:getID(cx, cy)
-									else
-										-- only 1 node in this cluster, just remove it
-										tremove(route_data.metadata, i)
-										tremove(route_data.route, i)
-									end
-									route_data.length = self.TSP:PathLength(route_data.route, self.LZName[zone][2])
-									throttleFrame:Show()
 									flag = true
-									break
+								else
+									-- If this is not our node, add to new centroid
+									sum_x, sum_y = sum_x + x2, sum_y + y2
 								end
 							end
-							if flag then break end
+							if flag then
+								if num_data > 1 then
+									-- More nodes left, update center
+									route_data.route[i] = self:getID(sum_x/(num_data-1), sum_y/(num_data-1))
+
+									tremove(route_data.metadata[i], j)
+								else
+									-- only 1 node in this cluster, just remove it
+									tremove(route_data.metadata, i)
+									tremove(route_data.route, i)
+								end
+								route_data.length = self.TSP:PathLength(route_data.route, self.LZName[zone][2])
+								throttleFrame:Show()
+								break
+							end
 						end
 					else
 						-- this is not a clustered route

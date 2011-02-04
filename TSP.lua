@@ -666,12 +666,19 @@ local RelaxPoint
 -- Tries to insert node into an existing cluster
 -- Returns true if successful, false otherwise
 local function tryInsert(nodes, metadata, insertPoint, nodeID, radius, zoneW, zoneH)
-	local x, y = floor(nodeID / 10000) / 10000, (nodeID % 10000) / 10000
-	local x2, y2 = floor(nodes[insertPoint] / 10000) / 10000, (nodes[insertPoint] % 10000) / 10000
-	-- Calculate the new centroid and coord
 	local num = #metadata[insertPoint]
-	x2, y2 = (x2*num+x)/(num+1), (y2*num+y)/(num+1)
+	local x, y = floor(nodeID / 10000) / 10000, (nodeID % 10000) / 10000
+	-- Calculate the new centroid and coord
+	local sum_x, sum_y = 0, 0
+	for i = 1, num do
+		local coord = metadata[insertPoint][i]
+		local x2, y2 = floor(coord / 10000) / 10000, (coord % 10000) / 10000
+		sum_x, sum_y = sum_x + x2, sum_y + y2
+	end
+	sum_x, sum_y = sum_x + x, sum_y + y
+	x2, y2 = sum_x/(num+1), sum_y/(num+1)
 	local coord = floor(x2 * 10000 + 0.5) * 10000 + floor(y2 * 10000 + 0.5)
+	-- Note: x2, y2 is now the new centroid, and not the
 	x2, y2 = floor(coord / 10000) / 10000, (coord % 10000) / 10000 -- to round off the coordinate
 	-- Check that the merged point is valid
 	for i = 1, num do
@@ -1145,8 +1152,10 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 	local function closest_point(px, py, x1, y1, x2, y2)
 		local dx, dy = x2-x1, y2-y1
 		local u = ((px - x1)*dx + (py - y1)*dy)/(dx^2 + dy^2)
-		-- If we try to get closer to the line, the route will get longer.
-		-- Never get past the beginning or the end node.
+		-- If we try to get closer to the line, the route will get longer. Never
+		-- get past the beginning or the end node.
+		-- With this check in place, we can allow u to be NaN or -NaN (or dx and
+		-- dy to be really small)
 		if u < 0 then u = 0 end
 		if u > 1 then u = 1 end
 		return x1 + u*dx, y1 + u*dy
@@ -1171,13 +1180,12 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 			destx = px + dx
 			desty = py + dy
 		end
-		destdist = (dx^2 + dy^2)^.5
 
 		local a = (dx^2 + dy^2)
 
 		-- Arbitrary large number to keep track of minimum value for U. Since u
 		-- is supposed to be between 0 and 1, 10 is more than OK. :)
-		local minU = 10
+		local minU = 1
 
 		-- Find the maximum amount we can move from (px, py) to (destx, desty)
 		-- without breaking the cluster constraints.
@@ -1229,28 +1237,22 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 	local x2, y2 = floor(nodes[nextNodeIdx] / 10000) / zoneDivW, (nodes[nextNodeIdx] % 10000) / zoneDivH
 
 	local modified
-	-- if the nodes are not too close to each other,
-	-- try to relax the node position.
-	-- TODO: If they are really close to each other, they should be merged
-	-- if possible. Skipping them stops the optimization for these points.
-	if abs(x2-x1)+abs(y2-y1) > tooclose then
 
-		local xmid, ymid = closest_point(px, py, x1, y1, x2, y2)
-		xmid, ymid = max_relax(px, py, xmid, ymid, metadata[nodeIdx])
+	local xmid, ymid = closest_point(px, py, x1, y1, x2, y2)
+	xmid, ymid = max_relax(px, py, xmid, ymid, metadata[nodeIdx])
 
-		-- Double check that the final point is still valid.
-		for i, val in pairs(metadata[nodeIdx]) do
-			local x, y = floor(val / 10000) / zoneDivW, (val % 10000) / zoneDivH
-			if (xmid-x)^2 + (ymid-y)^2 > cluster_dist^2 then
-				return false
-			end
+	-- Double check that the final point is still valid.
+	for i, val in pairs(metadata[nodeIdx]) do
+		local x, y = floor(val / 10000) / zoneDivW, (val % 10000) / zoneDivH
+		if (xmid-x)^2 + (ymid-y)^2 > cluster_dist^2 then
+			return false
 		end
+	end
 
-		-- Update the point only if it has moved significantly
-		if abs(xmid-px)+abs(ymid-py) > tooclose then
-			nodes[nodeIdx] = floor(xmid * zoneDivW + 0.5) * 10000 + floor(ymid * zoneDivH + 0.5)
-			modified = true
-		end
+	-- Update the point only if it has moved significantly
+	if abs(xmid-px)+abs(ymid-py) > tooclose then
+		nodes[nodeIdx] = floor(xmid * zoneDivW + 0.5) * 10000 + floor(ymid * zoneDivH + 0.5)
+		modified = true
 	end
 
 	return modified
