@@ -1322,12 +1322,6 @@ RelaxPoint = function(nodes, zoneID, nodeIdx, metadata, taboos, cluster_dist)
 		modified = true
 	end
 
-	-- Update the point only if it has moved significantly
-	if abs(xmid-px)+abs(ymid-py) > tooclose then
-		nodes[nodeIdx] = floor(xmid * zoneDivW + 0.5) * 10000 + floor(ymid * zoneDivH + 0.5)
-		modified = true
-	end
-
 	return modified
 end
 -- vim: ts=4 noexpandtab
