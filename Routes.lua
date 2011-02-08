@@ -800,7 +800,6 @@ function Routes:DeleteNode(zone, coord, node_name)
 						-- this is a clustered route
 						for i = 1, #route_data.route do
 							local num_data = #route_data.metadata[i]
-							local sum_x, sum_y = 0, 0
 							for j = 1, num_data do
 								local coord2 = route_data.metadata[i][j]
 								local x2, y2 = self:getXY(coord2)
@@ -808,14 +807,11 @@ function Routes:DeleteNode(zone, coord, node_name)
 									flag = true
 								else
 									-- If this is not our node, add to new centroid
-									sum_x, sum_y = sum_x + x2, sum_y + y2
 								end
 							end
 							if flag then
 								if num_data > 1 then
-									-- More nodes left, update center
-									route_data.route[i] = self:getID(sum_x/(num_data-1), sum_y/(num_data-1))
-
+									-- More nodes left, Leave the node
 									tremove(route_data.metadata[i], j)
 								else
 									-- only 1 node in this cluster, just remove it

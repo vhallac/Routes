@@ -665,31 +665,52 @@ local RelaxPoint
 -- Helper function for TSP:InsertNode()
 -- Tries to insert node into an existing cluster
 -- Returns true if successful, false otherwise
-local function tryInsert(nodes, metadata, insertPoint, nodeID, radius, zoneW, zoneH)
-	local num = #metadata[insertPoint]
-	local x, y = floor(nodeID / 10000) / 10000, (nodeID % 10000) / 10000
-	-- Calculate the new centroid and coord
-	local sum_x, sum_y = x, y
-	for i = 1, num do
-		local coord = metadata[insertPoint][i]
-		local x2, y2 = floor(coord / 10000) / 10000, (coord % 10000) / 10000
-		sum_x, sum_y = sum_x + x2, sum_y + y2
+local function findCentroid(cluster1, nodeIDorCluster2)
+	local function findClusterMinMax(cluster)
+		local minX, maxX, minY, maxY = 1/0, 0, 1/0, 0
+		for i=1, #cluster do
+			local nodeID = cluster[i]
+			local x, y = floor(nodeID / 10000) / 10000, (nodeID % 10000) / 10000
+			minX = min(minX, x)
+			minY = min(minY, y)
+			maxX = max(maxX, x)
+			maxY = max(maxY, y)
+		end
+		return minX, minY, maxX, maxY
 	end
-	x2, y2 = sum_x/(num+1), sum_y/(num+1)
-	local coord = floor(x2 * 10000 + 0.5) * 10000 + floor(y2 * 10000 + 0.5)
+
+	local minX1, minY1, maxX1, maxY1 = findClusterMinMax(cluster1)
+	local minX2, minY2, maxX2, maxY2
+	if type(nodeIDorCluster2) == "table" then
+		minX2, minY2, maxX2, maxY2 = findClusterMinMax(nodeIDorCluster2)
+	else
+		local x, y = floor(nodeIDorCluster2 / 10000) / 10000, (nodeIDorCluster2
+	% 10000) / 10000
+		minX2, minY2, maxX2, maxY2 = x, y, x, y
+	end
+	minX1 = min(minX1, minX2)
+	minY1 = min(minY1, minY2)
+	maxX1 = max(maxX1, maxX2)
+	maxY1 = max(maxY1, maxY2)
+	return (minX1 + maxX1)/2, (minY1 + maxY1)/2
+end
+
+local function tryInsert(nodes, metadata, insertPoint, nodeID, radius, zoneW, zoneH)
+	local x, y = findCentroid(metadata[insertPoint], nodeID)
+	local coord = floor(x * 10000 + 0.5) * 10000 + floor(y * 10000 + 0.5)
 	-- Note: x2, y2 is now the new centroid
-	x2, y2 = floor(coord / 10000) / 10000, (coord % 10000) / 10000 -- to round off the coordinate
+	local xc, yc = floor(coord / 10000) / 10000, (coord % 10000) / 10000 -- to round off the coordinate
 	-- Check that the merged point is valid
-	local t = (((x2 - x)*zoneW)^2 + ((y2 - y)*zoneH)^2)^0.5
+	local t = (((xc - x)*zoneW)^2 + ((yc - y)*zoneH)^2)^0.5
 	if t > radius then
 		return false
 	end
 
 	-- Check the rest of the cluster
-	for i = 1, num do
+	for i = 1, #metadata[insertPoint] do
 		local coord = metadata[insertPoint][i]
 		local x, y = floor(coord / 10000) / 10000, (coord % 10000) / 10000
-		local t = (((x2 - x)*zoneW)^2 + ((y2 - y)*zoneH)^2)^0.5
+		local t = (((xc - x)*zoneW)^2 + ((yc - y)*zoneH)^2)^0.5
 		if t > radius then
 			return false
 		end
@@ -961,11 +982,8 @@ function TSP:ClusterRoute(nodes, zoneID, radius)
 			local totalnum = node1num + node2num
 			-- Calculate the new centroid of node1
 			local n1, n2 = nodes[node1], nodes[node2]
-			local node1x = ( floor(n1 / 10000) / 10000 * node1num + floor(n2 / 10000) / 10000 * node2num ) / totalnum
-			local node1y = ( (n1 % 10000) / 10000 * node1num + (n2 % 10000) / 10000 * node2num ) / totalnum
-			-- Calculate the new coord from the new (x,y)
+			local node1x, node1y = findCentroid(m1, m2)
 			local coord = floor(node1x * 10000 + 0.5) * 10000 + floor(node1y * 10000 + 0.5)
-			node1x, node1y = floor(coord / 10000) / 10000, (coord % 10000) / 10000 -- to round off the coordinate
 			-- Check that the merged point is valid
 			for i = 1, node1num do
 				local coord = m1[i]
